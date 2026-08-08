@@ -1,0 +1,18 @@
+service:
+  base-url: "http://127.0.0.1:8787"
+  api-key: "change-this-api-key"
+  request-timeout-seconds: 8
+  reconnect-min-seconds: 2
+  reconnect-max-seconds: 30
+
+economy:
+  enabled: true
+  provider: vault
+
+paper:
+  server-id: "survival-1"
+  gui-refresh-ticks: 10
+  max-dirty-slot-updates-per-cycle: 500
+
+disclaimer:
+  show-on-join: true

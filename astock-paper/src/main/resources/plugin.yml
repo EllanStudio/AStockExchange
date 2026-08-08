@@ -1,0 +1,19 @@
+name: AStockPaper
+version: '1.0.0'
+main: dev.astock.paper.AStockPaperPlugin
+description: Thin Paper client for the AStock mirror simulation exchange
+author: AStock
+api-version: '26.2'
+softdepend: [Vault]
+commands:
+  stock:
+    description: A 股镜像模拟交易所
+    usage: /stock help
+    aliases: [astock, 股票]
+permissions:
+  astock.use:
+    description: Use the simulated stock exchange
+    default: true
+  astock.admin:
+    description: Administer the simulated stock exchange
+    default: op

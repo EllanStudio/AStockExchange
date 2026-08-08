@@ -1,0 +1,51 @@
+services:
+  mariadb:
+    image: mariadb:11.8.8
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: astock
+      MARIADB_USER: astock
+      MARIADB_PASSWORD: ${ASTOCK_DB_PASSWORD:?set ASTOCK_DB_PASSWORD in .env}
+      MARIADB_ROOT_PASSWORD: ${ASTOCK_DB_ROOT_PASSWORD:?set ASTOCK_DB_ROOT_PASSWORD in .env}
+      TZ: Asia/Shanghai
+    command:
+      - --transaction-isolation=READ-COMMITTED
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - astock_mariadb:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  astock-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    environment:
+      ASTOCK_DB_URL: jdbc:mariadb://mariadb:3306/astock
+      ASTOCK_DB_USER: astock
+      ASTOCK_DB_PASSWORD: ${ASTOCK_DB_PASSWORD:?set ASTOCK_DB_PASSWORD in .env}
+      ASTOCK_API_KEY: ${ASTOCK_API_KEY:?set ASTOCK_API_KEY in .env}
+      ASTOCK_DATA_PRIMARY: ${ASTOCK_DATA_PRIMARY:-mock}
+      ASTOCK_DATA_FALLBACK: ${ASTOCK_DATA_FALLBACK:-}
+      ASTOCK_ENFORCE_SESSIONS: ${ASTOCK_ENFORCE_SESSIONS:-true}
+      TZ: Asia/Shanghai
+    ports:
+      - "127.0.0.1:${ASTOCK_PORT:-8787}:8787"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8787/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
+
+volumes:
+  astock_mariadb:

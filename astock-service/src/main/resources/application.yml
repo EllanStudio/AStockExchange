@@ -1,0 +1,80 @@
+server:
+  port: ${ASTOCK_PORT:8787}
+  shutdown: graceful
+  error:
+    include-message: never
+
+spring:
+  application:
+    name: astock-service
+  datasource:
+    url: ${ASTOCK_DB_URL:jdbc:mariadb://localhost:3306/astock}
+    username: ${ASTOCK_DB_USER:astock}
+    password: ${ASTOCK_DB_PASSWORD:change-me}
+    hikari:
+      maximum-pool-size: ${ASTOCK_DB_POOL_SIZE:8}
+      minimum-idle: 1
+      connection-timeout: 5000
+      transaction-isolation: TRANSACTION_READ_COMMITTED
+  flyway:
+    enabled: true
+    validate-migration-naming: true
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+astock:
+  api:
+    key: ${ASTOCK_API_KEY:change-this-api-key}
+  market:
+    timezone: Asia/Shanghai
+    enforce-sessions: ${ASTOCK_ENFORCE_SESSIONS:true}
+    quote-epoch: 3s
+  data:
+    primary: ${ASTOCK_DATA_PRIMARY:mock}
+    fallback: ${ASTOCK_DATA_FALLBACK:}
+    bulk-refresh: 10s
+    detail-single-flight: 2s
+    connect-timeout: 3s
+    request-timeout: 5s
+    execution-stale-after: 5s
+    display-stale-after: 15s
+    source-divergence-bps: 35
+    consecutive-error-breaker: 3
+  pricing:
+    game-coins-per-cny: 100
+    base-spread-bps: 15
+    additional-slippage-bps: 5
+    fee-bps: 3
+    minimum-fee: 100
+    market-order-price-cap-bps: 300
+  economy:
+    max-transfer-amount: 100000000000
+  risk:
+    player:
+      max-open-orders: 30
+      max-daily-turnover: 500000000
+      max-single-symbol-percent: 2000
+      max-total-stock-percent: 8000
+    market-maker:
+      minimum-coverage-ratio-bps: 13500
+      stop-new-buy-ratio-bps: 12000
+      max-symbol-exposure: 1000000000
+      max-global-exposure: 10000000000
+    trading:
+      short-selling: false
+      leverage: false
+      market-order-max-notional: 100000000
+
+logging:
+  level:
+    dev.astock: INFO

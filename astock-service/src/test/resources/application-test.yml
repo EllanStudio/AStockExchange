@@ -1,0 +1,52 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:astock;MODE=MariaDB;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  task:
+    scheduling:
+      enabled: false
+
+astock:
+  api:
+    key: integration-test-key
+  market:
+    timezone: Asia/Shanghai
+    enforce-sessions: false
+    quote-epoch: 3s
+  data:
+    primary: mock
+    fallback: ""
+    bulk-refresh: 1h
+    detail-single-flight: 1ms
+    connect-timeout: 1s
+    request-timeout: 1s
+    execution-stale-after: 1h
+    display-stale-after: 2h
+    source-divergence-bps: 35
+    consecutive-error-breaker: 3
+  pricing:
+    game-coins-per-cny: 100
+    base-spread-bps: 15
+    additional-slippage-bps: 5
+    fee-bps: 3
+    minimum-fee: 100
+    market-order-price-cap-bps: 300
+  economy:
+    max-transfer-amount: 1000000000000
+  risk:
+    player:
+      max-open-orders: 30
+      max-daily-turnover: 1000000000000
+      max-single-symbol-percent: 10000
+      max-total-stock-percent: 10000
+    market-maker:
+      minimum-coverage-ratio-bps: 13500
+      stop-new-buy-ratio-bps: 0
+      max-symbol-exposure: 1000000000000
+      max-global-exposure: 1000000000000
+    trading:
+      short-selling: false
+      leverage: false
+      market-order-max-notional: 1000000000000
