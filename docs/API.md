@@ -7,7 +7,9 @@ X-AStock-Key: <shared-secret>
 Content-Type: application/json
 ```
 
-价格参数和响应均为 `0.0001 CNY` 固定点单位，资金为 `0.01 游戏币`。路径里的股票可用 `SH.600519`、`SH_600519` 或纯六位代码。
+价格参数和响应均为 `0.0001` 原生币种固定点单位：沪深为 CNY、香港为 HKD、美国为 USD；资金为 `0.01 游戏币`。规范证券代码为 `SH.600519`、`SZ.000001`、`HK.00700`、`US.AAPL` 或 `US.BRK.B`。路径和 Paper 命令还接受下划线、纯六位沪深代码、1～5 位港股代码以及无前缀美股 ticker。
+
+同一个 `limitPrice` 数值会按目标证券的原生币种解释，例如 `HK.00700` 的 `1500000` 表示 `HK$150.0000`，`US.AAPL` 的 `2500000` 表示 `$250.0000`。服务随后使用运营配置的游戏经济汇率换算 Broker Wallet 冻结额；它不调用实时外汇市场。
 
 ## 行情
 
@@ -19,6 +21,8 @@ WS  /ws/quotes
 ```
 
 WebSocket 同样使用 `X-AStock-Key`。连接后先收到 `SNAPSHOT`，随后收到 `QUOTE`；断线缓存只可展示，不代表仍可成交。
+
+`GET /api/v1/admin/status` 的 `markets` 字段分别返回 `CN/HK/US` 的本地市场阶段和是否允许成交。只有 `CONTINUOUS` 阶段可撮合；美股盘前行情不参与首版成交。
 
 ## 账户
 
@@ -45,6 +49,8 @@ POST /api/v1/orders
 ```
 
 `clientRequestId` 全局唯一；重复提交返回原订单。市价单的 `limitPrice` 必须为 `null`，服务会生成防极端滑点的内部 `priceCap`。
+
+数量、tick、涨跌停和可卖日来自该证券当前生效的 `astock_security_rule`。`price_limit_bps = 0` 表示该证券没有统一的日涨跌停限制，并不表示风控关闭。行情必须同时新鲜、处于可交易状态且具有真实买一卖一，订单才可能在下一行情序列成交。
 
 ```text
 DELETE /api/v1/orders/{orderId}?playerUuid={uuid}

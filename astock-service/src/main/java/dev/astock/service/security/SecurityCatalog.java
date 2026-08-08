@@ -13,7 +13,8 @@ import java.util.Optional;
 @Repository
 public class SecurityCatalog {
     private static final String ACTIVE_QUERY = """
-            SELECT s.security_id, s.symbol, s.name, s.exchange, s.board, s.enabled, s.frozen_reason,
+            SELECT s.security_id, s.symbol, s.name, s.exchange, s.board, s.currency,
+                   s.enabled, s.frozen_reason,
                    r.effective_from, r.effective_to, r.lot_size, r.tick_size,
                    r.price_limit_bps, r.t_plus_days, r.enabled AS rule_enabled
             FROM astock_security s
@@ -30,6 +31,14 @@ public class SecurityCatalog {
     public List<SecurityInfo> findEnabled(LocalDate date) {
         return jdbc.query(ACTIVE_QUERY + " AND s.enabled = TRUE AND r.enabled = TRUE ORDER BY s.security_id",
                 this::map, Date.valueOf(date), Date.valueOf(date));
+    }
+
+    public List<SecurityInfo> findEnabled(String exchange, LocalDate date) {
+        return jdbc.query(ACTIVE_QUERY + """
+                 AND s.enabled = TRUE AND r.enabled = TRUE AND s.exchange = ?
+                 ORDER BY s.security_id
+                """, this::map, Date.valueOf(date), Date.valueOf(date),
+                exchange.trim().toUpperCase(Locale.ROOT));
     }
 
     public Optional<SecurityInfo> findBySymbol(String rawSymbol, LocalDate date) {
@@ -73,8 +82,8 @@ public class SecurityCatalog {
         );
         return new SecurityInfo(
                 rs.getInt("security_id"), rs.getString("symbol"), rs.getString("name"),
-                rs.getString("exchange"), rs.getString("board"), rs.getBoolean("enabled"),
-                rs.getString("frozen_reason"), rule
+                rs.getString("exchange"), rs.getString("board"), rs.getString("currency"),
+                rs.getBoolean("enabled"), rs.getString("frozen_reason"), rule
         );
     }
 }

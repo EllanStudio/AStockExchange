@@ -51,7 +51,11 @@ astock:
     source-divergence-bps: 35
     consecutive-error-breaker: 3
   pricing:
-    game-coins-per-cny: 100
+    # Operator-defined game-economy rates, not live FX rates.
+    game-coins-per-currency-unit:
+      CNY: ${ASTOCK_RATE_CNY:100}
+      HKD: ${ASTOCK_RATE_HKD:100}
+      USD: ${ASTOCK_RATE_USD:700}
     base-spread-bps: 15
     additional-slippage-bps: 5
     fee-bps: 3

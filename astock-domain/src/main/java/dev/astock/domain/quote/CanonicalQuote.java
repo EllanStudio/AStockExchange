@@ -2,10 +2,11 @@ package dev.astock.domain.quote;
 
 import java.util.Locale;
 import java.util.Objects;
+import java.util.regex.Pattern;
 
 /**
- * Provider-neutral quote. Prices use 1/10,000 CNY, quantities use shares and
- * timestamps use Unix epoch milliseconds.
+ * Provider-neutral quote. Prices use 1/10,000 of the security's native
+ * currency, quantities use shares and timestamps use Unix epoch milliseconds.
  */
 public record CanonicalQuote(
         int securityId,
@@ -28,6 +29,12 @@ public record CanonicalQuote(
         QuoteQuality quality,
         String source
 ) {
+    private static final Pattern CN_SYMBOL = Pattern.compile("(?:SH|SZ)\\.\\d{6}");
+    private static final Pattern HK_SYMBOL = Pattern.compile("HK\\.\\d{5}");
+    private static final Pattern US_SYMBOL = Pattern.compile(
+            "US\\.(?=.{1,15}$)[A-Z][A-Z0-9]*(?:[.-][A-Z0-9]+)*"
+    );
+
     public CanonicalQuote {
         if (securityId <= 0) {
             throw new IllegalArgumentException("securityId must be positive");
@@ -60,9 +67,18 @@ public record CanonicalQuote(
     public static String normalizeSymbol(String value) {
         Objects.requireNonNull(value, "symbol");
         String symbol = value.trim().toUpperCase(Locale.ROOT);
-        if (!symbol.matches("(?:SH|SZ)\\.\\d{6}")) {
-            throw new IllegalArgumentException("symbol must look like SH.600519 or SZ.000001");
+        if (!CN_SYMBOL.matcher(symbol).matches()
+                && !HK_SYMBOL.matcher(symbol).matches()
+                && !US_SYMBOL.matcher(symbol).matches()) {
+            throw new IllegalArgumentException(
+                    "symbol must look like SH.600519, SZ.000001, HK.00700 or US.AAPL"
+            );
         }
         return symbol;
+    }
+
+    public static String exchangeOf(String value) {
+        String symbol = normalizeSymbol(value);
+        return symbol.substring(0, symbol.indexOf('.'));
     }
 }

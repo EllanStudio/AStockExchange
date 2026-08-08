@@ -88,11 +88,11 @@ public final class StockCommand implements CommandExecutor, TabCompleter {
     }
 
     private void help(CommandSender sender) {
-        sender.sendMessage(Component.text("A 股镜像模拟交易所", NamedTextColor.GOLD));
+        sender.sendMessage(Component.text("A/H/美股镜像模拟交易所", NamedTextColor.GOLD));
         sender.sendMessage(Component.text("/stock market | quote <代码> | balance | positions | orders", NamedTextColor.YELLOW));
-        sender.sendMessage(Component.text("/stock buy|sell <代码> <股数> [限价元] | cancel <订单ID>", NamedTextColor.YELLOW));
+        sender.sendMessage(Component.text("/stock buy|sell <代码> <股数> [原生币种限价] | cancel <订单ID>", NamedTextColor.YELLOW));
         sender.sendMessage(Component.text("/stock deposit|withdraw <游戏币> | disclaimer", NamedTextColor.YELLOW));
-        sender.sendMessage(Component.text("市价单在下一次有效行情序列成交；买入股份执行 T+1。", NamedTextColor.GRAY));
+        sender.sendMessage(Component.text("市价单在下一次有效行情序列成交；整手、涨跌停和可卖日按市场规则执行。", NamedTextColor.GRAY));
     }
 
     private void disclaimer(CommandSender sender) {
@@ -105,9 +105,9 @@ public final class StockCommand implements CommandExecutor, TabCompleter {
         requireArgs(args, 2, "/stock quote <股票代码>");
         String symbol = Formatters.symbol(args[1]);
         respond(sender, client.quote(symbol, true), quote -> Component.text(
-                quote.symbol() + " 最新 ¥" + Formatters.price(quote.lastPrice())
-                        + " 买一 ¥" + Formatters.price(quote.bid1Price())
-                        + " 卖一 ¥" + Formatters.price(quote.ask1Price())
+                quote.symbol() + " 最新 " + Formatters.price(quote.symbol(), quote.lastPrice())
+                        + " 买一 " + Formatters.price(quote.symbol(), quote.bid1Price())
+                        + " 卖一 " + Formatters.price(quote.symbol(), quote.ask1Price())
                         + " [" + quote.quality() + "/" + quote.source() + "]",
                 quote.executable() ? NamedTextColor.AQUA : NamedTextColor.YELLOW));
     }
@@ -125,11 +125,12 @@ public final class StockCommand implements CommandExecutor, TabCompleter {
         respondMany(sender, client.positions(player.getUniqueId()), positions -> {
             if (positions.isEmpty()) return List.of(Component.text("当前没有持仓。", NamedTextColor.GRAY));
             List<Component> lines = new ArrayList<>();
-            lines.add(Component.text("持仓（总数 / T+1 可卖 / 冻结）", NamedTextColor.GOLD));
+            lines.add(Component.text("持仓（总数 / 可卖 / 冻结）", NamedTextColor.GOLD));
             for (Position position : positions) {
                 lines.add(Component.text(position.symbol() + " " + position.name() + "："
                         + position.quantityTotal() + " / " + position.quantityAvailable() + " / "
-                        + position.quantityFrozen() + "，成本 ¥" + Formatters.price(position.averageCost()),
+                        + position.quantityFrozen() + "，成本 "
+                        + Formatters.price(position.symbol(), position.averageCost()),
                         NamedTextColor.AQUA));
             }
             return lines;
@@ -155,10 +156,10 @@ public final class StockCommand implements CommandExecutor, TabCompleter {
 
     private void order(CommandSender sender, String[] args, String side) {
         Player player = requirePlayer(sender);
-        requireArgs(args, 3, "/stock " + side.toLowerCase(Locale.ROOT) + " <代码> <股数> [限价元]");
+        requireArgs(args, 3, "/stock " + side.toLowerCase(Locale.ROOT) + " <代码> <股数> [原生币种限价]");
         String symbol = Formatters.symbol(args[1]);
         long quantity = Long.parseLong(args[2]);
-        if (quantity <= 0) throw new IllegalArgumentException("股数必须大于零。首版买卖单位为 100 股。");
+        if (quantity <= 0) throw new IllegalArgumentException("股数必须大于零；具体整手由目标市场规则校验。");
         Long limit = args.length >= 4 ? Formatters.priceUnits(args[3]) : null;
         String type = limit == null ? "MARKET" : "LIMIT";
         String requestId = serverId + ":order:" + player.getUniqueId() + ":" + UUID.randomUUID();
@@ -259,7 +260,7 @@ public final class StockCommand implements CommandExecutor, TabCompleter {
     }
 
     private static Component error(String message) {
-        return Component.text("[A股模拟] " + message, NamedTextColor.RED);
+        return Component.text("[股票模拟] " + message, NamedTextColor.RED);
     }
 
     @Override

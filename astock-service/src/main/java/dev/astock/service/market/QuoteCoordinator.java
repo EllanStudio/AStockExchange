@@ -6,6 +6,7 @@ import dev.astock.domain.quote.QuoteQualityGate;
 import dev.astock.service.config.AStockProperties;
 import dev.astock.service.security.SecurityCatalog;
 import dev.astock.service.security.SecurityInfo;
+import dev.astock.service.trading.MarketCalendarService;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,10 +17,10 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.Clock;
-import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -39,8 +40,8 @@ public class QuoteCoordinator {
     private final QuoteQualityGate qualityGate;
     private final ApplicationEventPublisher events;
     private final AStockProperties properties;
+    private final MarketCalendarService calendar;
     private final Clock clock;
-    private final ZoneId marketZone;
     private final AtomicLong sequence = new AtomicLong();
     private final Map<String, CanonicalQuote> latest = new ConcurrentHashMap<>();
     private final Map<String, DetailFlight> detailFlights = new ConcurrentHashMap<>();
@@ -55,6 +56,7 @@ public class QuoteCoordinator {
             QuoteQualityGate qualityGate,
             ApplicationEventPublisher events,
             AStockProperties properties,
+            MarketCalendarService calendar,
             Clock clock
     ) {
         this.catalog = catalog;
@@ -63,8 +65,8 @@ public class QuoteCoordinator {
         this.qualityGate = qualityGate;
         this.events = events;
         this.properties = properties;
+        this.calendar = calendar;
         this.clock = clock;
-        this.marketZone = ZoneId.of(properties.market().timezone());
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -74,8 +76,10 @@ public class QuoteCoordinator {
 
     @Scheduled(fixedDelayString = "${astock.data.bulk-refresh:10s}")
     public void refreshAll() {
-        LocalDate date = Instant.ofEpochMilli(clock.millis()).atZone(marketZone).toLocalDate();
-        List<SecurityInfo> securities = catalog.findEnabled(date);
+        List<SecurityInfo> securities = new ArrayList<>();
+        for (String exchange : List.of("SH", "SZ", "HK", "US")) {
+            securities.addAll(catalog.findEnabled(exchange, calendar.tradeDate(exchange)));
+        }
         if (securities.isEmpty()) return;
         try {
             List<ProviderQuote> rawQuotes = router.fetchBulk(securities);
@@ -84,10 +88,18 @@ public class QuoteCoordinator {
                     .collect(java.util.stream.Collectors.toMap(ProviderQuote::symbol, value -> value, (left, right) -> left));
             Map<String, SecurityInfo> bySymbol = securities.stream()
                     .collect(java.util.stream.Collectors.toMap(SecurityInfo::symbol, value -> value));
+            Map<String, Boolean> continuousByExchange = new HashMap<>();
+            securities.forEach(security -> continuousByExchange.computeIfAbsent(
+                    security.exchange(), exchange -> calendar.currentPhase(exchange)
+                            == dev.astock.domain.rule.MarketPhase.CONTINUOUS
+            ));
             long epoch = sequence.incrementAndGet();
             for (ProviderQuote raw : rawQuotes) {
                 SecurityInfo security = bySymbol.get(raw.symbol());
-                if (security != null) accept(security, raw, epoch, Optional.ofNullable(comparisons.get(raw.symbol())));
+                if (security != null) {
+                    accept(security, raw, epoch, Optional.ofNullable(comparisons.get(raw.symbol())),
+                            continuousByExchange.getOrDefault(security.exchange(), false));
+                }
             }
             lastSuccessfulRefresh = clock.millis();
             lastRefreshError = null;
@@ -124,20 +136,26 @@ public class QuoteCoordinator {
     }
 
     private CanonicalQuote loadDetail(String symbol) {
-        LocalDate date = Instant.ofEpochMilli(clock.millis()).atZone(marketZone).toLocalDate();
+        String exchange = CanonicalQuote.exchangeOf(symbol);
+        LocalDate date = calendar.tradeDate(exchange);
         SecurityInfo security = catalog.findBySymbol(symbol, date)
                 .orElseThrow(() -> new IllegalArgumentException("unknown security: " + symbol));
         ProviderQuote raw = router.fetchDetail(security)
                 .orElseThrow(() -> new MarketDataException("no detail quote for " + symbol));
-        return accept(security, raw, sequence.incrementAndGet(), router.fetchComparisonDetail(security)).quote();
+        boolean marketContinuous = calendar.currentPhase(security.exchange())
+                == dev.astock.domain.rule.MarketPhase.CONTINUOUS;
+        return accept(security, raw, sequence.incrementAndGet(), router.fetchComparisonDetail(security),
+                marketContinuous).quote();
     }
 
     private QuoteAssessment accept(SecurityInfo security, ProviderQuote raw, long epoch,
-                                   Optional<ProviderQuote> comparison) {
+                                   Optional<ProviderQuote> comparison, boolean marketContinuous) {
         CanonicalQuote normalized = normalizer.normalize(security, raw, epoch, clock.millis());
         Optional<CanonicalQuote> normalizedComparison = comparison.map(value ->
                 normalizer.normalize(security, value, epoch, clock.millis()));
-        QuoteAssessment assessment = qualityGate.assess(normalized, security.rule().priceLimitBps(), normalizedComparison);
+        QuoteAssessment assessment = qualityGate.assess(
+                normalized, security.rule().priceLimitBps(), normalizedComparison, marketContinuous
+        );
         if (assessment.acceptedForDisplay()) {
             latest.put(security.symbol(), assessment.quote());
             events.publishEvent(new QuoteUpdatedEvent(assessment.quote(), assessment.executable()));

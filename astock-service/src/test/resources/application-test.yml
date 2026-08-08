@@ -27,7 +27,10 @@ astock:
     source-divergence-bps: 35
     consecutive-error-breaker: 3
   pricing:
-    game-coins-per-cny: 100
+    game-coins-per-currency-unit:
+      CNY: 100
+      HKD: 100
+      USD: 700
     base-spread-bps: 15
     additional-slippage-bps: 5
     fee-bps: 3

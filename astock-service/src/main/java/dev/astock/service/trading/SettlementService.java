@@ -60,7 +60,7 @@ public class SettlementService {
         for (DuePosition position : due) {
             transactions.executeWithoutResult(status -> settle(position, tradeDate));
         }
-        if (!due.isEmpty()) LOGGER.info("Settled {} due T+1 positions for {}", due.size(), tradeDate);
+        if (!due.isEmpty()) LOGGER.info("Settled {} due position lots for {}", due.size(), tradeDate);
         return due.size();
     }
 

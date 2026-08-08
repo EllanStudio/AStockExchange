@@ -26,8 +26,8 @@ public class RiskService {
         this.properties = properties;
     }
 
-    public void checkPlacement(long accountId, int securityId, String symbol, OrderSide side,
-                               long proposedNotional, LocalDate tradeDate) {
+    public void checkPlacement(long accountId, int securityId, String symbol, String currency,
+                               OrderSide side, long proposedNotional, LocalDate tradeDate) {
         Integer openOrders = jdbc.queryForObject("""
                 SELECT COUNT(*) FROM astock_order
                 WHERE account_id = ? AND status IN ('ACCEPTED', 'PARTIALLY_FILLED')
@@ -38,13 +38,14 @@ public class RiskService {
         Long daily = jdbc.queryForObject("""
                 SELECT COALESCE(SUM(f.notional), 0) FROM astock_fill f
                 JOIN astock_order o ON o.order_id = f.order_id
-                WHERE o.account_id = ? AND CAST(f.created_at AS DATE) = ?
+                WHERE o.account_id = ?
+                  AND COALESCE(f.trade_date, CAST(f.created_at AS DATE)) = ?
                 """, Long.class, accountId, Date.valueOf(tradeDate));
         if (daily != null && Math.addExact(daily, proposedNotional) > properties.risk().player().maxDailyTurnover()) {
             throw new TradeRejectedException("MAX_DAILY_TURNOVER", "daily turnover limit exceeded");
         }
         if (side == OrderSide.BUY) {
-            checkMarketMakerCoverage(securityId, symbol, proposedNotional);
+            checkMarketMakerCoverage(securityId, symbol, currency, proposedNotional);
             checkConcentration(accountId, securityId, symbol, proposedNotional);
         }
     }
@@ -54,16 +55,21 @@ public class RiskService {
         Map<Integer, CanonicalQuote> byId = new HashMap<>();
         quotes.snapshot().forEach(quote -> byId.put(quote.securityId(), quote));
         Long liability = jdbc.query("""
-                SELECT security_id, SUM(quantity_total) AS quantity
-                FROM astock_position GROUP BY security_id
+                SELECT p.security_id, s.currency, SUM(p.quantity_total) AS quantity
+                FROM astock_position p
+                JOIN astock_security s ON s.security_id = p.security_id
+                GROUP BY p.security_id, s.currency
                 """, result -> {
             long total = 0;
             while (result.next()) {
                 CanonicalQuote quote = byId.get(result.getInt("security_id"));
-                if (quote != null && quote.bid1Price() > 0) {
-                    long price = ScaledMath.subtractBps(quote.bid1Price(), properties.pricing().baseSpreadBps());
+                long anchor = quote == null ? 0
+                        : quote.bid1Price() > 0 ? quote.bid1Price() : quote.lastPrice();
+                if (anchor > 0) {
+                    long price = ScaledMath.subtractBps(anchor, properties.pricing().baseSpreadBps());
                     total = Math.addExact(total, ScaledMath.notionalCash(
-                            result.getLong("quantity"), price, properties.pricing().gameCoinsPerCny()));
+                            result.getLong("quantity"), price,
+                            properties.pricing().gameCoinsPerUnit(result.getString("currency"))));
                 }
             }
             return total;
@@ -74,7 +80,8 @@ public class RiskService {
                 coverage >= properties.risk().marketMaker().stopNewBuyRatioBps());
     }
 
-    private void checkMarketMakerCoverage(int securityId, String symbol, long proposedNotional) {
+    private void checkMarketMakerCoverage(int securityId, String symbol, String currency,
+                                          long proposedNotional) {
         TreasurySnapshot snapshot = treasury();
         if (!snapshot.acceptingNpcBuys()) {
             throw new TradeRejectedException("TREASURY_COVERAGE", "market maker coverage is below the buy threshold");
@@ -90,7 +97,7 @@ public class RiskService {
         if (quote != null && quantity != null && quantity > 0) {
             symbolExposure = ScaledMath.notionalCash(quantity,
                     quote.bid1Price() > 0 ? quote.bid1Price() : quote.lastPrice(),
-                    properties.pricing().gameCoinsPerCny());
+                    properties.pricing().gameCoinsPerUnit(currency));
         }
         if (Math.addExact(symbolExposure, proposedNotional)
                 > properties.risk().marketMaker().maxSymbolExposure()) {
@@ -105,8 +112,10 @@ public class RiskService {
         long stockValue = 0;
         long symbolValue = 0;
         for (var position : jdbc.queryForList("""
-                SELECT security_id, quantity_total FROM astock_position
-                WHERE account_id = ? AND quantity_total > 0
+                SELECT p.security_id, p.quantity_total, s.currency
+                FROM astock_position p
+                JOIN astock_security s ON s.security_id = p.security_id
+                WHERE p.account_id = ? AND p.quantity_total > 0
                 """, accountId)) {
             int id = ((Number) position.get("security_id")).intValue();
             long quantity = ((Number) position.get("quantity_total")).longValue();
@@ -115,7 +124,7 @@ public class RiskService {
             if (quote != null) {
                 long value = ScaledMath.notionalCash(quantity,
                         quote.bid1Price() > 0 ? quote.bid1Price() : quote.lastPrice(),
-                        properties.pricing().gameCoinsPerCny());
+                        properties.pricing().gameCoinsPerUnit(position.get("currency").toString()));
                 stockValue = Math.addExact(stockValue, value);
                 if (id == securityId) symbolValue = Math.addExact(symbolValue, value);
             }

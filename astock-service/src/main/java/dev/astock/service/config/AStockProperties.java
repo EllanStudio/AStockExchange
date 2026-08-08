@@ -3,6 +3,10 @@ package dev.astock.service.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.time.Duration;
+import java.util.LinkedHashMap;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
 
 @ConfigurationProperties("astock")
 public record AStockProperties(
@@ -34,13 +38,39 @@ public record AStockProperties(
     }
 
     public record Pricing(
-            long gameCoinsPerCny,
+            Map<String, Long> gameCoinsPerCurrencyUnit,
             int baseSpreadBps,
             int additionalSlippageBps,
             int feeBps,
             long minimumFee,
             int marketOrderPriceCapBps
     ) {
+        public Pricing {
+            if (gameCoinsPerCurrencyUnit == null || gameCoinsPerCurrencyUnit.isEmpty()) {
+                throw new IllegalArgumentException("pricing currency rates are required");
+            }
+            Map<String, Long> normalized = new LinkedHashMap<>();
+            gameCoinsPerCurrencyUnit.forEach((currency, rate) -> {
+                String code = Objects.requireNonNull(currency, "currency").trim().toUpperCase(Locale.ROOT);
+                if (!code.matches("[A-Z]{3}") || rate == null || rate <= 0) {
+                    throw new IllegalArgumentException("invalid game-economy rate for " + currency);
+                }
+                normalized.put(code, rate);
+            });
+            for (String required : new String[]{"CNY", "HKD", "USD"}) {
+                if (!normalized.containsKey(required)) {
+                    throw new IllegalArgumentException("missing game-economy rate for " + required);
+                }
+            }
+            gameCoinsPerCurrencyUnit = Map.copyOf(normalized);
+        }
+
+        public long gameCoinsPerUnit(String currency) {
+            String code = Objects.requireNonNull(currency, "currency").trim().toUpperCase(Locale.ROOT);
+            Long rate = gameCoinsPerCurrencyUnit.get(code);
+            if (rate == null) throw new IllegalArgumentException("no game-economy rate for " + code);
+            return rate;
+        }
     }
 
     public record Economy(long maxTransferAmount) {

@@ -60,6 +60,17 @@ class QuoteQualityGateTest {
         assertThat(result.quote().quality()).isEqualTo(QuoteQuality.CONFLICT);
     }
 
+    @Test
+    void keepsAClosedMarketsLastQuoteVisibleButNonExecutable() {
+        QuoteAssessment result = gate.assess(
+                quote(1, NOW - 86_400_000, 1_000), 0, Optional.empty(), false
+        );
+        assertThat(result.acceptedForDisplay()).isTrue();
+        assertThat(result.executable()).isFalse();
+        assertThat(result.quote().quality()).isEqualTo(QuoteQuality.STALE);
+        assertThat(result.violations()).contains("last quote is stale while the market is closed");
+    }
+
     private static CanonicalQuote quote(long sequence, long timestamp, long volume) {
         return new CanonicalQuote(1, "SH.600519", sequence, timestamp, NOW,
                 1_000_000, 1_000_000, 995_000, 1_010_000, 990_000,

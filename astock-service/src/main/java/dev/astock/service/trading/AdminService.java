@@ -1,5 +1,6 @@
 package dev.astock.service.trading;
 
+import dev.astock.domain.quote.CanonicalQuote;
 import dev.astock.service.market.QuoteCoordinator;
 import dev.astock.service.security.SecurityCatalog;
 import dev.astock.service.security.SecurityInfo;
@@ -44,6 +45,11 @@ public class AdminService {
         result.put("database", jdbc.queryForObject("SELECT 1", Integer.class) != null ? "UP" : "DOWN");
         result.put("marketPhase", calendar.currentPhase());
         result.put("executionOpen", calendar.executionOpen());
+        Map<String, MarketStatus> markets = new LinkedHashMap<>();
+        markets.put("CN", new MarketStatus(calendar.currentPhase("SH"), calendar.executionOpen("SH")));
+        markets.put("HK", new MarketStatus(calendar.currentPhase("HK"), calendar.executionOpen("HK")));
+        markets.put("US", new MarketStatus(calendar.currentPhase("US"), calendar.executionOpen("US")));
+        result.put("markets", markets);
         result.put("quotes", quotes.status());
         result.put("openOrders", jdbc.queryForObject("""
                 SELECT COUNT(*) FROM astock_order WHERE status IN ('ACCEPTED', 'PARTIALLY_FILLED')
@@ -56,7 +62,8 @@ public class AdminService {
     }
 
     public void freeze(String symbol, String reason) {
-        SecurityInfo security = catalog.findBySymbol(symbol, calendar.tradeDate())
+        String exchange = CanonicalQuote.exchangeOf(symbol);
+        SecurityInfo security = catalog.findBySymbol(symbol, calendar.tradeDate(exchange))
                 .orElseThrow(() -> new IllegalArgumentException("unknown security: " + symbol));
         catalog.freeze(security.symbol(), reason);
         engine.cancelOpenOrdersForSecurity(security.id(), "SECURITY_FROZEN:" + reason);
@@ -144,5 +151,8 @@ public class AdminService {
     }
 
     public record ShareDifference(String symbol, long projected, long ledger, long difference) {
+    }
+
+    public record MarketStatus(dev.astock.domain.rule.MarketPhase phase, boolean executionOpen) {
     }
 }

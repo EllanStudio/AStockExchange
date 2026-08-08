@@ -108,4 +108,32 @@ class TradingFlowIntegrationTest {
         assertThat(queries.account(player).cashAvailable()).isEqualTo(before);
         assertThat(queries.account(player).cashFrozen()).isZero();
     }
+
+    @Test
+    void executesUnitedStatesOddLotAsImmediatelySellablePosition() {
+        UUID player = UUID.randomUUID();
+        var transfer = commands.call(() -> transfers.begin("deposit-us", player,
+                TransferDirection.DEPOSIT, 1_000_000_000L));
+        commands.call(() -> transfers.confirmEconomyMutation(transfer.transferId()));
+
+        var buy = commands.call(() -> engine.place(new PlaceOrderCommand(
+                "buy-us", player, "US.AAPL", OrderSide.BUY, OrderType.MARKET, 1, null
+        )));
+        quotes.refreshDetail("US.AAPL").join();
+        commands.call(() -> null);
+        assertThat(queries.order(buy.orderId()).orElseThrow().status()).isEqualTo(OrderStatus.FILLED);
+        assertThat(queries.positions(player)).singleElement().satisfies(position -> {
+            assertThat(position.symbol()).isEqualTo("US.AAPL");
+            assertThat(position.quantityTotal()).isEqualTo(1);
+            assertThat(position.quantityAvailable()).isEqualTo(1);
+        });
+
+        var sell = commands.call(() -> engine.place(new PlaceOrderCommand(
+                "sell-us", player, "US.AAPL", OrderSide.SELL, OrderType.MARKET, 1, null
+        )));
+        quotes.refreshDetail("US.AAPL").join();
+        commands.call(() -> null);
+        assertThat(queries.order(sell.orderId()).orElseThrow().status()).isEqualTo(OrderStatus.FILLED);
+        assertThat(queries.positions(player)).isEmpty();
+    }
 }

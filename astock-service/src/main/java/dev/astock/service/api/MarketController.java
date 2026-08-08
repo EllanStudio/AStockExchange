@@ -57,10 +57,17 @@ public class MarketController {
 
     static String normalizePathSymbol(String value) {
         String symbol = value.trim().toUpperCase(Locale.ROOT).replace('_', '.');
-        if (!symbol.contains(".") && symbol.matches("\\d{6}")) {
+        if (symbol.matches("\\d{6}")) {
             symbol = (symbol.startsWith("5") || symbol.startsWith("6") || symbol.startsWith("9") ? "SH." : "SZ.")
                     + symbol;
+        } else if (symbol.matches("\\d{1,5}")) {
+            symbol = "HK." + "0".repeat(5 - symbol.length()) + symbol;
+        } else if (symbol.matches("HK\\.\\d{1,5}")) {
+            String ticker = symbol.substring(3);
+            symbol = "HK." + "0".repeat(5 - ticker.length()) + ticker;
+        } else if (!symbol.matches("(?:SH|SZ|HK|US)\\..+")) {
+            symbol = "US." + symbol;
         }
-        return symbol;
+        return CanonicalQuote.normalizeSymbol(symbol);
     }
 }

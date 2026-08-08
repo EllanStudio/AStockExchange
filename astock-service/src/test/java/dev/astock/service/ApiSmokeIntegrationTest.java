@@ -34,7 +34,15 @@ class ApiSmokeIntegrationTest {
                         .header("X-AStock-Key", "integration-test-key").GET().build(),
                 HttpResponse.BodyHandlers.ofString());
         assertThat(quotes.statusCode()).isEqualTo(200);
-        assertThat(quotes.body()).contains("SH.600000", "sourceTimestamp", "bid1Price");
+        assertThat(quotes.body()).contains(
+                "SH.600000", "HK.00700", "US.AAPL", "sourceTimestamp", "bid1Price"
+        );
+
+        HttpResponse<String> status = http.send(HttpRequest.newBuilder(uri("/api/v1/admin/status"))
+                        .header("X-AStock-Key", "integration-test-key").GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertThat(status.statusCode()).isEqualTo(200);
+        assertThat(status.body()).contains("markets", "CN", "HK", "US", "executionOpen");
     }
 
     private URI uri(String path) {

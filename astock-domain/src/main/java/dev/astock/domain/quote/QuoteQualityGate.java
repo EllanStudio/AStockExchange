@@ -30,6 +30,15 @@ public final class QuoteQualityGate {
             int priceLimitBps,
             Optional<CanonicalQuote> comparisonSource
     ) {
+        return assess(candidate, priceLimitBps, comparisonSource, true);
+    }
+
+    public QuoteAssessment assess(
+            CanonicalQuote candidate,
+            int priceLimitBps,
+            Optional<CanonicalQuote> comparisonSource,
+            boolean marketContinuous
+    ) {
         var fatal = new ArrayList<String>();
         var degraded = new ArrayList<String>();
         CanonicalQuote previous = lastAccepted.get(candidate.securityId());
@@ -75,8 +84,11 @@ public final class QuoteQualityGate {
         if (sourceConflict) fatal.add("primary and fallback sources diverge");
 
         long ageMillis = Math.max(0, clock.millis() - candidate.sourceTimestamp());
-        if (ageMillis > policy.displayStaleAfter().toMillis()) {
-            fatal.add("quote is too stale for display");
+        boolean staleForDisplay = ageMillis > policy.displayStaleAfter().toMillis();
+        if (staleForDisplay && marketContinuous) {
+            fatal.add("quote is too stale for an open market");
+        } else if (staleForDisplay) {
+            degraded.add("last quote is stale while the market is closed");
         } else if (ageMillis > policy.executionStaleAfter().toMillis()) {
             degraded.add("quote is too stale for execution");
         }
@@ -94,10 +106,11 @@ public final class QuoteQualityGate {
             return new QuoteAssessment(false, false, candidate.withQuality(QuoteQuality.REJECTED), all);
         }
 
-        QuoteQuality quality = degraded.isEmpty() ? QuoteQuality.VALID : QuoteQuality.DEGRADED;
+        QuoteQuality quality = staleForDisplay ? QuoteQuality.STALE
+                : degraded.isEmpty() ? QuoteQuality.VALID : QuoteQuality.DEGRADED;
         CanonicalQuote accepted = candidate.withQuality(quality);
         lastAccepted.put(candidate.securityId(), accepted);
-        return new QuoteAssessment(true, degraded.isEmpty(), accepted, degraded);
+        return new QuoteAssessment(true, quality == QuoteQuality.VALID, accepted, degraded);
     }
 
     public void clear(int securityId) {

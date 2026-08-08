@@ -6,35 +6,47 @@ import java.math.RoundingMode;
 
 /** Fixed-point conversions shared by validation, reservation and settlement. */
 public final class ScaledMath {
-    public static final long PRICE_UNITS_PER_CNY = 10_000L;
+    public static final long PRICE_UNITS_PER_CURRENCY_UNIT = 10_000L;
+    /** @deprecated use {@link #PRICE_UNITS_PER_CURRENCY_UNIT}. */
+    @Deprecated(forRemoval = false)
+    public static final long PRICE_UNITS_PER_CNY = PRICE_UNITS_PER_CURRENCY_UNIT;
     public static final long CASH_MINOR_PER_GAME_COIN = 100L;
     public static final long BPS_DENOMINATOR = 10_000L;
 
     private ScaledMath() {
     }
 
-    public static long priceUnits(BigDecimal cny) {
-        if (cny == null || cny.signum() < 0) throw new IllegalArgumentException("price must not be negative");
-        return cny.multiply(BigDecimal.valueOf(PRICE_UNITS_PER_CNY))
+    public static long priceUnits(BigDecimal nativePrice) {
+        if (nativePrice == null || nativePrice.signum() < 0) {
+            throw new IllegalArgumentException("price must not be negative");
+        }
+        return nativePrice.multiply(BigDecimal.valueOf(PRICE_UNITS_PER_CURRENCY_UNIT))
                 .setScale(0, RoundingMode.HALF_UP)
                 .longValueExact();
     }
 
+    /** @deprecated prices may be CNY, HKD or USD; use {@link #currency(long)}. */
+    @Deprecated(forRemoval = false)
     public static BigDecimal cny(long priceUnits) {
+        return currency(priceUnits);
+    }
+
+    public static BigDecimal currency(long priceUnits) {
         return BigDecimal.valueOf(priceUnits, 4);
     }
 
     /**
-     * Converts shares * CNY price into hundredths of a game coin.
-     * gameCoinsPerCny is an integer exchange rate.
+     * Converts shares times a native-currency price into hundredths of a game
+     * coin. {@code gameCoinsPerCurrencyUnit} is an operator-defined integer
+     * game-economy rate, not a live foreign-exchange quote.
      */
-    public static long notionalCash(long quantity, long priceUnits, long gameCoinsPerCny) {
-        if (quantity < 0 || priceUnits < 0 || gameCoinsPerCny <= 0) {
+    public static long notionalCash(long quantity, long priceUnits, long gameCoinsPerCurrencyUnit) {
+        if (quantity < 0 || priceUnits < 0 || gameCoinsPerCurrencyUnit <= 0) {
             throw new IllegalArgumentException("invalid notional input");
         }
         BigInteger numerator = BigInteger.valueOf(quantity)
                 .multiply(BigInteger.valueOf(priceUnits))
-                .multiply(BigInteger.valueOf(gameCoinsPerCny));
+                .multiply(BigInteger.valueOf(gameCoinsPerCurrencyUnit));
         return divideHalfUp(numerator, BigInteger.valueOf(100L));
     }
 

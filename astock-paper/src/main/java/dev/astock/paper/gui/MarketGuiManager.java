@@ -25,6 +25,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 public final class MarketGuiManager implements Listener, AutoCloseable {
     private static final int STOCK_SLOTS = 18;
@@ -43,11 +44,10 @@ public final class MarketGuiManager implements Listener, AutoCloseable {
     }
 
     public void open(Player player) {
-        List<String> symbols = new ArrayList<>(
-                stream.snapshot().stream().limit(STOCK_SLOTS).map(Quote::symbol).toList());
+        List<String> symbols = selectedSymbols();
         MarketHolder holder = new MarketHolder();
         Inventory inventory = Bukkit.createInventory(holder, 27,
-                Component.text("A 股镜像模拟交易所", NamedTextColor.GOLD));
+                Component.text("A/H/美股镜像模拟交易所", NamedTextColor.GOLD));
         holder.inventory = inventory;
         View view = new View(holder, symbols, new long[STOCK_SLOTS], new boolean[] {!stream.connected()});
         for (int slot = 0; slot < STOCK_SLOTS; slot++) {
@@ -76,7 +76,7 @@ public final class MarketGuiManager implements Listener, AutoCloseable {
         String symbol = view.symbols().get(event.getRawSlot());
         Quote quote = stream.get(symbol);
         if (quote != null) {
-            player.sendMessage(Component.text(symbol + " 最新价 ¥" + Formatters.price(quote.lastPrice())
+            player.sendMessage(Component.text(symbol + " 最新价 " + Formatters.price(symbol, quote.lastPrice())
                     + "；使用 /stock buy|sell " + symbol + " <数量> [限价]", NamedTextColor.AQUA));
         }
     }
@@ -92,7 +92,7 @@ public final class MarketGuiManager implements Listener, AutoCloseable {
         int updates = 0;
         for (View view : List.copyOf(views.values())) {
             if (view.symbols().isEmpty()) {
-                view.symbols().addAll(stream.snapshot().stream().limit(STOCK_SLOTS).map(Quote::symbol).toList());
+                view.symbols().addAll(selectedSymbols());
             }
             if (view.connection()[0] != stream.connected() && updates < maxDirtyUpdates) {
                 updateConnection(view);
@@ -129,14 +129,30 @@ public final class MarketGuiManager implements Listener, AutoCloseable {
         double change = quote.previousClose() == 0 ? 0
                 : (quote.lastPrice() - quote.previousClose()) * 100.0d / quote.previousClose();
         var lore = new ArrayList<Component>();
-        lore.add(Component.text("最新 ¥" + Formatters.price(quote.lastPrice()), color));
+        lore.add(Component.text("最新 " + Formatters.price(quote.symbol(), quote.lastPrice()), color));
         lore.add(Component.text(String.format(java.util.Locale.ROOT, "涨跌 %+.2f%%", change), color));
-        lore.add(Component.text("买一/卖一 ¥" + Formatters.price(quote.bid1Price())
-                + " / ¥" + Formatters.price(quote.ask1Price()), NamedTextColor.GRAY));
+        lore.add(Component.text("买一/卖一 " + Formatters.price(quote.symbol(), quote.bid1Price())
+                + " / " + Formatters.price(quote.symbol(), quote.ask1Price()), NamedTextColor.GRAY));
         lore.add(Component.text("序列 " + quote.sequence() + " · " + quote.source(), NamedTextColor.DARK_GRAY));
         if (stale) lore.add(Component.text("行情延迟，仅供查看", NamedTextColor.YELLOW));
         view.holder().inventory.setItem(slot, item(material, Component.text(quote.symbol(), color), lore));
         view.sequences()[slot] = quote.sequence();
+    }
+
+    private List<String> selectedSymbols() {
+        List<Quote> snapshot = stream.snapshot();
+        List<String> selected = Stream.of("SH.", "SZ.", "HK.", "US.")
+                .flatMap(prefix -> snapshot.stream()
+                        .filter(quote -> quote.symbol().startsWith(prefix))
+                        .limit(prefix.equals("SH.") || prefix.equals("SZ.") ? 4 : 5))
+                .limit(STOCK_SLOTS)
+                .map(Quote::symbol)
+                .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
+        for (Quote quote : snapshot) {
+            if (selected.size() >= STOCK_SLOTS) break;
+            if (!selected.contains(quote.symbol())) selected.add(quote.symbol());
+        }
+        return selected;
     }
 
     private static ItemStack item(Material material, Component name, List<Component> lore) {

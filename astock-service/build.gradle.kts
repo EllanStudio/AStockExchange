@@ -14,6 +14,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-flyway")
     implementation("org.flywaydb:flyway-core")
     implementation("com.google.code.gson:gson:2.13.2")
+    implementation("io.github.longbridge:openapi-sdk:4.4.3")
     runtimeOnly("org.flywaydb:flyway-mysql")
     runtimeOnly("org.mariadb.jdbc:mariadb-java-client")
 

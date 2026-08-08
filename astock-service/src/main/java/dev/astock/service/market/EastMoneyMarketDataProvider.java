@@ -60,6 +60,9 @@ public class EastMoneyMarketDataProvider implements MarketDataProvider {
 
     @Override
     public Optional<ProviderQuote> fetchDetail(SecurityInfo security) {
+        if (!security.exchange().equals("SH") && !security.exchange().equals("SZ")) {
+            return Optional.empty();
+        }
         String secId = security.exchange().equals("SH") ? "1." : "0.";
         secId += security.symbol().substring(3);
         String query = "https://push2.eastmoney.com/api/qt/stock/get?fltt=2&invt=2&secid="

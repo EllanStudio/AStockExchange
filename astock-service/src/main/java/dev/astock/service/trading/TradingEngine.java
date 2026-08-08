@@ -110,9 +110,10 @@ public class TradingEngine {
 
     @EventListener
     public void quoteUpdated(QuoteUpdatedEvent event) {
+        String exchange = CanonicalQuote.exchangeOf(event.quote().symbol());
         if (event.executable()) {
             commandBus.submit(() -> matchQuote(event.quote()));
-        } else if (calendar.executionOpen() && needsDetailRefresh(event.quote())) {
+        } else if (calendar.executionOpen(exchange) && needsDetailRefresh(event.quote())) {
             // Bulk overview feeds often do not carry a book. Use them only as a
             // cheap trigger, then confirm the order against a fresh detail book.
             quotes.refreshDetail(event.quote().symbol()).exceptionally(exception -> {
@@ -123,7 +124,8 @@ public class TradingEngine {
     }
 
     public void matchQuote(CanonicalQuote quote) {
-        if (!calendar.executionOpen() || !isExecutableNow(quote)) return;
+        String exchange = CanonicalQuote.exchangeOf(quote.symbol());
+        if (!calendar.executionOpen(exchange) || !isExecutableNow(quote)) return;
         List<String> ids = jdbc.queryForList("""
                 SELECT order_id FROM astock_order
                 WHERE security_id = ? AND status IN ('ACCEPTED', 'PARTIALLY_FILLED')
@@ -152,7 +154,8 @@ public class TradingEngine {
         Optional<OrderView> duplicate = queryService.orderByClientRequest(command.clientRequestId());
         if (duplicate.isPresent()) return new Placement(duplicate.get().orderId(), false);
 
-        LocalDate tradeDate = calendar.tradeDate();
+        String exchange = CanonicalQuote.exchangeOf(command.symbol());
+        LocalDate tradeDate = calendar.tradeDate(exchange);
         SecurityInfo security = catalog.findBySymbol(command.symbol(), tradeDate)
                 .orElseThrow(() -> new TradeRejectedException("SECURITY_UNKNOWN", "unknown security"));
         if (!security.enabled()) throw new TradeRejectedException("SECURITY_FROZEN", "security is frozen");
@@ -161,7 +164,7 @@ public class TradingEngine {
         CanonicalQuote quote = quotes.current(security.symbol())
                 .orElseThrow(() -> new TradeRejectedException("QUOTE_MISSING", "no market quote is available"));
         ensureDisplayQuote(quote);
-        if (command.limitPrice() != null) {
+        if (command.limitPrice() != null && security.rule().priceLimitBps() > 0) {
             long lowerLimit = alignDown(ScaledMath.subtractBps(quote.previousClose(),
                     security.rule().priceLimitBps()), security.rule().tickSize());
             long upperLimit = alignUp(ScaledMath.addBps(quote.previousClose(),
@@ -187,12 +190,13 @@ public class TradingEngine {
                     security.rule().tickSize());
         }
         long proposedNotional = ScaledMath.notionalCash(command.quantity(), priceCap,
-                properties.pricing().gameCoinsPerCny());
+                properties.pricing().gameCoinsPerUnit(security.currency()));
         if (command.type() == OrderType.MARKET
                 && proposedNotional > properties.risk().trading().marketOrderMaxNotional()) {
             throw new TradeRejectedException("MARKET_NOTIONAL", "market order notional exceeds the configured limit");
         }
-        risk.checkPlacement(accountId, security.id(), security.symbol(), command.side(), proposedNotional, tradeDate);
+        risk.checkPlacement(accountId, security.id(), security.symbol(), security.currency(),
+                command.side(), proposedNotional, tradeDate);
 
         String orderId = UUID.randomUUID().toString();
         long reservedCash = 0;
@@ -218,7 +222,8 @@ public class TradingEngine {
             PositionRow position = lockPosition(accountId, security.id())
                     .orElseThrow(() -> new TradeRejectedException("INSUFFICIENT_SHARES", "no position to sell"));
             if (position.quantityAvailable() < command.quantity()) {
-                throw new TradeRejectedException("T_PLUS_ONE_OR_FROZEN", "insufficient T+1 available shares");
+                throw new TradeRejectedException("T_PLUS_ONE_OR_FROZEN",
+                        "insufficient settled/available shares (T+1 or frozen where applicable)");
             }
             reservedQuantity = command.quantity();
             jdbc.update("""
@@ -251,7 +256,8 @@ public class TradingEngine {
         DbOrder order = lockOrder(orderId).orElse(null);
         if (order == null || order.status().isTerminal() || quote.sequence() <= order.acceptedSequence()) return 0;
         if (!isExecutableNow(quote)) return 0;
-        SecurityInfo security = catalog.findById(order.securityId(), calendar.tradeDate())
+        String exchange = CanonicalQuote.exchangeOf(quote.symbol());
+        SecurityInfo security = catalog.findById(order.securityId(), calendar.tradeDate(exchange))
                 .orElseThrow(() -> new TradeRejectedException("RULE_MISSING", "no active trading rule"));
         if (!security.enabled()) return 0;
 
@@ -292,7 +298,8 @@ public class TradingEngine {
 
     private void settleBuy(DbOrder order, SecurityInfo security, CanonicalQuote quote,
                            long executionPrice, long quantity) {
-        long notional = ScaledMath.notionalCash(quantity, executionPrice, properties.pricing().gameCoinsPerCny());
+        long notional = ScaledMath.notionalCash(quantity, executionPrice,
+                properties.pricing().gameCoinsPerUnit(security.currency()));
         long previousNotional = sumOrder(order.orderId(), "notional");
         long previousFees = sumOrder(order.orderId(), "fee");
         long totalFee = ScaledMath.fee(Math.addExact(previousNotional, notional),
@@ -326,8 +333,10 @@ public class TradingEngine {
         PositionRow position = lockOrCreatePosition(order.accountId(), security.id());
         long newTotal = Math.addExact(position.quantityTotal(), quantity);
         long average = weightedAverage(position.quantityTotal(), position.averageCost(), quantity, executionPrice);
-        LocalDate tradeDate = calendar.tradeDate();
-        LocalDate unlockDate = calendar.settlementDate(tradeDate, security.rule().tPlusDays());
+        LocalDate tradeDate = calendar.tradeDate(security.exchange());
+        LocalDate unlockDate = calendar.settlementDate(
+                security.exchange(), tradeDate, security.rule().tPlusDays()
+        );
         boolean immediatelyAvailable = !unlockDate.isAfter(tradeDate);
         jdbc.update("""
                 UPDATE astock_position
@@ -343,7 +352,8 @@ public class TradingEngine {
                 """, order.accountId(), security.id(), quantity, quantity, Date.valueOf(tradeDate),
                 Date.valueOf(unlockDate), executionPrice, immediatelyAvailable);
 
-        finishFill(order, quote, executionPrice, quantity, notional, fee, remaining, remainingReserve);
+        finishFill(order, quote, executionPrice, quantity, notional, fee, remaining,
+                remainingReserve, tradeDate);
         List<LedgerLine> lines = new ArrayList<>();
         lines.add(line("PLAYER_CASH_FROZEN", order.accountId(), CASH_CURRENCY, -actualTotal, "FILL"));
         lines.add(new LedgerLine("SYSTEM_CASH", "MARKET_MAKER", CASH_CURRENCY, notional, "FILL"));
@@ -361,7 +371,8 @@ public class TradingEngine {
 
     private void settleSell(DbOrder order, SecurityInfo security, CanonicalQuote quote,
                             long executionPrice, long quantity) {
-        long notional = ScaledMath.notionalCash(quantity, executionPrice, properties.pricing().gameCoinsPerCny());
+        long notional = ScaledMath.notionalCash(quantity, executionPrice,
+                properties.pricing().gameCoinsPerUnit(security.currency()));
         long previousNotional = sumOrder(order.orderId(), "notional");
         long previousFees = sumOrder(order.orderId(), "fee");
         long totalFee = ScaledMath.fee(Math.addExact(previousNotional, notional),
@@ -377,7 +388,8 @@ public class TradingEngine {
         if (position.quantityFrozen() < quantity || order.reservedQuantity() < quantity) {
             throw new IllegalStateException("frozen share projection drift");
         }
-        consumeLots(order.accountId(), security.id(), quantity, calendar.tradeDate());
+        LocalDate tradeDate = calendar.tradeDate(security.exchange());
+        consumeLots(order.accountId(), security.id(), quantity, tradeDate);
 
         jdbc.update("""
                 UPDATE astock_account
@@ -400,7 +412,7 @@ public class TradingEngine {
                 """, quantity, security.id());
 
         long remaining = order.remainingQuantity() - quantity;
-        finishFill(order, quote, executionPrice, quantity, notional, fee, remaining, 0);
+        finishFill(order, quote, executionPrice, quantity, notional, fee, remaining, 0, tradeDate);
         jdbc.update("UPDATE astock_order SET reserved_quantity = ? WHERE order_id = ?", remaining, order.orderId());
         String shares = sharesCurrency(security.id());
         ledger.write(UUID.randomUUID().toString(), "FILL", order.orderId(), List.of(
@@ -416,15 +428,16 @@ public class TradingEngine {
     }
 
     private void finishFill(DbOrder order, CanonicalQuote quote, long price, long quantity,
-                            long notional, long fee, long remaining, long remainingReserve) {
+                            long notional, long fee, long remaining, long remainingReserve,
+                            LocalDate tradeDate) {
         String fillId = UUID.randomUUID().toString();
         jdbc.update("""
                 INSERT INTO astock_fill (
                     fill_id, order_id, security_id, quantity, price, notional, fee,
-                    quote_sequence, quote_source, quote_timestamp
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    quote_sequence, quote_source, quote_timestamp, trade_date
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, fillId, order.orderId(), order.securityId(), quantity, price, notional, fee,
-                quote.sequence(), quote.source(), quote.sourceTimestamp());
+                quote.sequence(), quote.source(), quote.sourceTimestamp(), Date.valueOf(tradeDate));
         OrderStatus status = remaining == 0 ? OrderStatus.FILLED : OrderStatus.PARTIALLY_FILLED;
         jdbc.update("""
                 UPDATE astock_order

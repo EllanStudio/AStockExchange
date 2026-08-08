@@ -7,7 +7,7 @@ api-version: '26.2'
 softdepend: [Vault]
 commands:
   stock:
-    description: A 股镜像模拟交易所
+    description: A/H/美股镜像模拟交易所
     usage: /stock help
     aliases: [astock, 股票]
 permissions:

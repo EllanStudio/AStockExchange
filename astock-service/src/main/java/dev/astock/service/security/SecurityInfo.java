@@ -8,6 +8,7 @@ public record SecurityInfo(
         String name,
         String exchange,
         String board,
+        String currency,
         boolean enabled,
         String frozenReason,
         TradingRule rule

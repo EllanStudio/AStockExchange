@@ -17,7 +17,7 @@ public record TradingRule(
         if (effectiveTo != null && effectiveTo.isBefore(effectiveFrom)) {
             throw new IllegalArgumentException("effectiveTo is before effectiveFrom");
         }
-        if (lotSize <= 0 || tickSize <= 0 || priceLimitBps <= 0 || tPlusDays < 0) {
+        if (lotSize <= 0 || tickSize <= 0 || priceLimitBps < 0 || tPlusDays < 0) {
             throw new IllegalArgumentException("invalid trading rule values");
         }
     }
