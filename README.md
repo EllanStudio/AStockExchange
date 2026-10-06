@@ -51,7 +51,7 @@ flowchart LR
 - Java 25
 - Gradle 9.6.1（Wrapper 含官方 SHA-256 校验）
 - Spring Boot 4.1.0
-- Paper API `26.3.build.157-beta`（固定 build，不动态拉取）
+- Paper API `26.3.build.157-beta`（固定 build，不动态拉取；保留原支持的 Paper `26.2.build.111-stable` CI 矩阵）
 - MariaDB 11.8.8
 
 ## 快速验收
