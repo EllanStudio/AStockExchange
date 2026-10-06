@@ -3,7 +3,7 @@ plugins {
 }
 
 dependencies {
-    compileOnly("io.papermc.paper:paper-api:26.2.build.111-stable")
+    compileOnly("io.papermc.paper:paper-api:26.3.build.157-beta")
     implementation("com.google.code.gson:gson:2.13.2")
     testImplementation(platform("org.junit:junit-bom:6.0.3"))
     testImplementation("org.junit.jupiter:junit-jupiter")
