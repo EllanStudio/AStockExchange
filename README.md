@@ -1,12 +1,12 @@
 # AStock Exchange
 
-一个面向 Paper 26.2 多子服网络的“全球股票镜像模拟交易所”，首版统一支持沪深 A 股、港股和美股。现实行情只作为价格锚点；玩家交易的是服务器内部虚拟股份，所有资金、持仓、订单、盈亏和审计记录都在 AStockService 与 MariaDB 中结算，不连接真实证券账户。
+一个面向 Paper 26.3 多子服网络的“全球股票镜像模拟交易所”，首版统一支持沪深 A 股、港股和美股。现实行情只作为价格锚点；玩家交易的是服务器内部虚拟股份，所有资金、持仓、订单、盈亏和审计记录都在 AStockService 与 MariaDB 中结算，不连接真实证券账户。
 
 本仓库交付的是可运行首版，不是概念脚手架：
 
 - `astock-domain`：固定点金额、统一行情、质量闸门、有效期交易规则和交易时段模型；
 - `astock-service`：Spring Boot 4.1 / Java 25 独立服务，包含 REST、WebSocket、Flyway、单逻辑写入队列、下一行情序列成交、部分成交、分市场交易时段/整手/可卖日、Broker Wallet、有限 NPC 做市、复式账本、风控与管理审计；
-- `astock-paper`：Paper 26.2 薄插件，包含异步服务客户端、行情推送缓存、全局 GUI 刷新器、玩家/管理命令、反射式 Vault 桥接和本地持久化转账 Saga 日志；
+- `astock-paper`：Paper 26.3 薄插件，包含异步服务客户端、行情推送缓存、全局 GUI 刷新器、玩家/管理命令、反射式 Vault 桥接和本地持久化转账 Saga 日志；
 - `compose.yaml`：MariaDB 11.8.8 与 AStockService 的本地部署；
 - 自动化测试：覆盖固定点运算、三地代码、行情拒绝条件、沪深/香港/纽约交易时段、订单幂等、下一序列成交、A 股 T+1、美股当日可卖、买卖闭环、撤单释放、转账和账本零和校验。
 
@@ -51,7 +51,7 @@ flowchart LR
 - Java 25
 - Gradle 9.6.1（Wrapper 含官方 SHA-256 校验）
 - Spring Boot 4.1.0
-- Paper API `26.2.build.111-stable`（固定 build，不动态拉取）
+- Paper API `26.3.build.157-beta`（固定 build，不动态拉取；保留原支持的 Paper `26.2.build.111-stable` CI 矩阵）
 - MariaDB 11.8.8
 
 ## 快速验收
@@ -99,7 +99,7 @@ java -jar astock-service\build\libs\astock-service.jar
 
 ## Paper 安装
 
-1. 安装 Paper 26.2、Vault 及一个 Vault 兼容经济插件。
+1. 安装 Paper 26.3、Vault 及一个 Vault 兼容经济插件。
 2. 将 `AStockPaper-1.0.0.jar` 放入每个 Paper 子服的 `plugins/`。
 3. 首次启动后编辑 `plugins/AStockPaper/config.yml`：
    - `service.base-url` 指向共享的 AStockService；

@@ -1,0 +1,78 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - main
+      - chore/minecraft-26.3
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: paper-26.2
+            paper-api-version: 26.2.build.111-stable
+            paper-api-major: '26.2'
+          - name: paper-26.3
+            paper-api-version: 26.3.build.157-beta
+            paper-api-major: '26.3'
+
+    name: Build (${{ matrix.name }})
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x gradlew
+
+      - name: Build and test
+        run: ./gradlew --no-daemon clean test build -PpaperApiVersion="${{ matrix.paper-api-version }}"
+
+      - name: Verify Java 25 bytecode and plugin descriptor
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import struct
+          classes = list(Path("astock-paper/build/classes/java/main").rglob("*.class"))
+          classes += list(Path("astock-service/build/classes/java/main").rglob("*.class"))
+          if not classes:
+              raise SystemExit("no main class files found")
+          majors = {struct.unpack(">H", p.read_bytes()[6:8])[0] for p in classes}
+          print(f"main class count={len(classes)} major versions={sorted(majors)}")
+          if majors != {69}:
+              raise SystemExit(f"expected Java 25 major 69, got {sorted(majors)}")
+          descriptor = Path("astock-paper/build/resources/main/plugin.yml").read_text(encoding="utf-8")
+          expected = "api-version: '${{ matrix.paper-api-major }}'"
+          if expected not in descriptor:
+              raise SystemExit(f"descriptor did not render {expected!r}")
+          print(f"descriptor API version verified: {expected}")
+          PY
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: AStockExchange-${{ matrix.name }}
+          path: |
+            astock-paper/build/libs/AStockPaper-*.jar
+            astock-service/build/libs/astock-service.jar
+          if-no-files-found: error
+          retention-days: 14

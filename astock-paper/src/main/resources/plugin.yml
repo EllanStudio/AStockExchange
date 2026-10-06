@@ -3,7 +3,7 @@ version: '1.0.0'
 main: dev.astock.paper.AStockPaperPlugin
 description: Thin Paper client for the AStock mirror simulation exchange
 author: AStock
-api-version: '26.2'
+api-version: '${paperApiMajor}'
 softdepend: [Vault]
 commands:
   stock:
